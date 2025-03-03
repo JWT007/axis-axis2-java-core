@@ -62,6 +62,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.ws.rs.core.HttpHeaders;
 import javax.xml.namespace.QName;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -211,7 +212,7 @@ public class AxisServlet extends HttpServlet {
 
             } catch (AxisFault e) {
                 setResponseState(msgContext, response);
-                log.debug(e);
+                log.error(e.getMessage(), e);
                 if (msgContext != null) {
                     processAxisFault(msgContext, response, out, e);
                 } else {
@@ -417,7 +418,7 @@ public class AxisServlet extends HttpServlet {
                 String status =
                         (String) msgContext.getProperty(Constants.HTTP_RESPONSE_STATE);
                 if (status == null) {
-                    log.error("processAxisFault() on error message: " + e.getMessage() + " , found a null HTTP status from the MessageContext instance, setting HttpServletResponse status to HttpServletResponse.SC_INTERNAL_SERVER_ERROR");
+                    log.error("processAxisFault() on error message: " + e.getMessage() + " , found a null HTTP status from the MessageContext instance, setting HttpServletResponse status to HttpServletResponse.SC_INTERNAL_SERVER_ERROR", e);
                     res.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
                 } else {
                     log.error("processAxisFault() found an HTTP status from the MessageContext instance, setting HttpServletResponse status to: " + status);
@@ -897,8 +898,29 @@ public class AxisServlet extends HttpServlet {
 
         public void processURLRequest() throws IOException, ServletException {
             try {
-                RESTUtil.processURLRequest(messageContext, response.getOutputStream(),
-                        request.getContentType());
+		// AXIS2-5971, content-type is not present on some
+		// types of REST requests that have no body and in 
+		// those cases use the 'accept' header if defined.
+		// On a null content-type it will default to application/x-www-form-urlencoded.
+		final String accept = request.getHeader(HttpHeaders.ACCEPT);
+		final String contentType = request.getContentType();
+		if (contentType != null) {
+                    RESTUtil.processURLRequest(messageContext, response.getOutputStream(), contentType);
+		} else if (accept != null && !accept.isEmpty()) {
+		    // TODO: not easy to parse without adding code or libs, and needs to match
+		    // a MessageFormatter we support. Curl by default sends */* . Example from FireFox:
+		    // text/html, application/xhtml+xml, application/xml;q=0.9, */*;q=0.8
+		    if (accept.indexOf(HTTPConstants.MEDIA_TYPE_APPLICATION_XML) != -1) {
+                        log.debug("processURLRequest() will default to this content type found as one of the values in accept header: " + HTTPConstants.MEDIA_TYPE_APPLICATION_XML);
+                        RESTUtil.processURLRequest(messageContext, response.getOutputStream(), HTTPConstants.MEDIA_TYPE_APPLICATION_XML);
+		    } else {
+                        log.debug("AxisServlet.processURLRequest() found null contentType with an Accept header: "+accept+" , that we could not match a content-type, will use default contentType: application/x-www-form-urlencoded");
+                        RESTUtil.processURLRequest(messageContext, response.getOutputStream(), null);
+		    }
+		} else {
+                    log.debug("AxisServlet.processURLRequest() found null contentType and null Accept header, will use default contentType: application/x-www-form-urlencoded");
+                    RESTUtil.processURLRequest(messageContext, response.getOutputStream(), null);
+		}
                 this.checkResponseWritten();
             } catch (AxisFault e) {
                 setResponseState(messageContext, response);
@@ -915,7 +937,7 @@ public class AxisServlet extends HttpServlet {
         }
 
         private void processFault(AxisFault e) throws ServletException, IOException {
-            log.debug(e);
+            log.error(e.getMessage(), e);
             if (messageContext != null) {
                 processAxisFault(messageContext, response, response.getOutputStream(), e);
             } else {

@@ -23,6 +23,8 @@ Release Process
 Release process overview
 ------------------------
 
+### Update: Since the 1.8.x series we have released from git master without branches. Skip to Performing a Release. We may or may not use branches again in the future. 
+
 ### Cutting a branch
 
 *   When a release is ready to go, release manager (RM) puts
@@ -105,9 +107,15 @@ Verify that the code meets the basic requirements for being releasable:
     
         mvn clean install -Papache-release
 
-3.  Check that the source distribution is buildable.
+You may also execute a dry run of the release process: mvn release:prepare -DdryRun=true. In a dry run, the generated zip files will still be labled as SNAPSHOT. After this, you need to clean up using the following command: mvn release:clean
 
-4.  Check that the source tree is buildable with an empty local Maven repository.
+3. Check that the Maven site can be generated and deployed successfully, and that it has the expected content.
+
+To generate the entire documentation in one place, complete with working inter-module links, execute the site-deploy phase (and check the files under target/staging). A quick and reliable way of doing that is to use the following command: mvn -Dmaven.test.skip=true clean package site-deploy
+
+4.  Check that the source distribution is buildable.
+
+5.  Check that the source tree is buildable with an empty local Maven repository.
 
 If any problems are detected, they should be fixed on the trunk (except for issues specific to the
 release branch) and then merged to the release branch.
@@ -156,25 +164,32 @@ The following things are required to perform the actual release:
 
 In order to prepare the release artifacts for vote, execute the following steps:
 
-1.  Start the release process using the following command:
+If not yet done, export your public key and <a href="https://dist.apache.org/repos/dist/release/axis/axis2/java/core/KEYS"> append it there. </a>
+
+If not yet done, also export your public key to the dev area and <a href="https://dist.apache.org/repos/dist/release/axis/axis2/java/core/KEYS"> append it there. </a>
+
+The command to export a public key is as follows:
+
+<code>gpg --armor --export key_id</code>
+
+If you have multiple keys, you can define a ~/.gnupg/gpg.conf file for a default. Note that while 'gpg --list-keys' will show your public keys, using maven-release-plugin with the command 'release:perform' below requires 'gpg --list-secret-keys' to have a valid entry that matches your public key, in order to create 'asc' files that are used to verify the release artifcats. 'release:prepare' creates the sha512 checksum files.
+
+The created artifacts i.e. zip files can be checked with, for example, sha512sum 'axis2-2.0.0-bin.zip.asc' which should match the generated sha512 files. In that example, use 'gpg --verify axis2-2.0.0-bin.zip.asc axis2-2.0.0-bin.zip' to verify the artifacts were signed correctly.
+
+1.  Start the release process using the following command - use 'mvn release:rollback' to undo and be aware that in the main pom.xml there is an apache parent that defines some plugin versions<a href="https://maven.apache.org/pom/asf/"> documented here. </a>
 
         mvn release:prepare
 
     When asked for a tag name, accept the default value (in the following format: `vX.Y.Z`).
-    The execution of the `release:prepare` goal may occasionally fail because `svn.apache.org`
-    resolves to one of the geolocated SVN mirrors and there is a propagation delay between
-    the master and these mirrors. If this happens,
-    wait for a minute (so that the mirrors can catch up with the master) and simply rerun the command.
-    It will continue where the error occurred.
 
 2.  Perform the release using the following command:
 
         mvn release:perform
 
 3.  Login to Nexus and close the staging repository. For more details about this step, see
-    [here](https://docs.sonatype.org/display/Repository/Closing+a+Staging+Repository).
+    [here](https://maven.apache.org/developers/release/maven-project-release-procedure.html) and [here](https://infra.apache.org/publishing-maven-artifacts.html#promote).
 
-4.  Execute the `target/checkout/etc/dist.py` script to upload the distributions.
+4.  Execute the `target/checkout/etc/dist.py` script to upload the source and binary distributions to the development area of the <a href="https://dist.apache.org/repos/dist/"> repository. </a>
 
 5.  Create a staging area for the Maven site:
 
@@ -193,6 +208,8 @@ In order to prepare the release artifacts for vote, execute the following steps:
     Now go to the `target/scmpublish-checkout` directory (relative to `target/checkout`) and check that there
     are no unexpected changes to the site. Then commit the changes.
 
+    The root dir of axis-site has a .asf.yaml file, referenced here at target/scmpublish-checkout/.asf.yaml, that is  <a href="https://github.com/apache/infrastructure-asfyaml/blob/main/README.md"> documented here. </a>
+
 7.  Start the release vote by sending a mail to `java-dev@axis.apache.org`.
     The mail should mention the following things:
 
@@ -204,7 +221,7 @@ In order to prepare the release artifacts for vote, execute the following steps:
 If the vote passes, execute the following steps:
 
 1.  Promote the artifacts in the staging repository. See
-    [here](https://maven.apache.org/developers/release/maven-project-release-procedure.html)
+    [here](https://central.sonatype.org/publish/release/#close-and-drop-or-release-your-staging-repository)
     for detailed instructions for this step.
 
 2.  Publish the distributions:
